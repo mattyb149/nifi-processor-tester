@@ -23,7 +23,7 @@ plugins {
     id 'com.github.johnrengelman.shadow' version '2.0.0'
 }
 
-version = '0.1.0'
+version = '1.0.0.1.7.0'
 project.ext.NIFI_VERSION='1.7.0-SNAPSHOT'
 description = "A project to create a stub/mock environment for testing NiFi processors"
 group = 'mattyb149'

@@ -7,23 +7,17 @@ java -cp nifi-processor-tester-<version>-all.jar [options] script_file
 
   Where options may include:
   
-    -success            Output information about flow files that were transferred to the success relationship. Defaults to true
-    
-    -failure            Output information about flow files that were transferred to the failure relationship. Defaults to false
-    
-    -no-success         Do not output information about flow files that were transferred to the success relationship. Defaults to false
-    
     -content            Output flow file contents. Defaults to false
     
     -attrs              Output flow file attributes. Defaults to false
-    
-    -all-rels           Output information about flow files that were transferred to any relationship. Defaults to false
     
     -all                Output content, attributes, etc. about flow files that were transferred to any relationship. Defaults to false
     
     -input=<directory>  Send each file in the specified directory as a flow file to the script
     
-    -modules=<paths>    Comma-separated list of paths (files or directories) containing script modules/JARs
+    -nifi-path=<path>   Path to folder containing the NAR with processor under test, and any parent NARs
+
+    -attrfile=<path>    Path to a properties file specifying attributes to add to incoming flow files
     
     
     
@@ -45,7 +39,7 @@ The JAR is available on Bintray at https://bintray.com/mattyb149/maven/nifi-proc
 <dependency>
   <groupId>mattyb149</groupId>
   <artifactId>nifi-processor-tester</artifactId>
-  <version>1.1.1</version>
+  <version>1.0.0.1.7.0</version>
   <type>jar</type>
   <classifier>all</classifier>
 </dependency>
@@ -53,7 +47,7 @@ The JAR is available on Bintray at https://bintray.com/mattyb149/maven/nifi-proc
 
 ### Gradle
 ```gradle
-compile(group: 'mattyb149', name: 'nifi-processor-tester', version: '1.1.1', ext: 'jar', classifier: 'all')
+compile(group: 'mattyb149', name: 'nifi-processor-tester', version: '1.0.0.1.7.0', ext: 'jar', classifier: 'all')
 ```
 
 ## License

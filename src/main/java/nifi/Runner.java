@@ -18,7 +18,6 @@ package nifi;
 
 import org.apache.nifi.bundle.Bundle;
 import org.apache.nifi.nar.ExtensionManager;
-import org.apache.nifi.nar.ExtensionMapping;
 import org.apache.nifi.nar.NarClassLoaders;
 import org.apache.nifi.nar.NarUnpacker;
 import org.apache.nifi.nar.SystemBundle;
@@ -72,7 +71,7 @@ public class Runner {
     private static int numFiles = 0;
 
     private static void printUsage() {
-        System.err.println("Usage: java -jar nifi-proc-tester-<version>-all.jar [options] <processor class name>");
+        System.err.println("Usage: java -jar nifi-proc-tester-<version>-all.jar [options] processor_class_simple_name");
         System.err.println(" Where options may include:");
         System.err.println("   -content            Output flow file contents. Defaults to false");
         System.err.println("   -attrs              Output flow file attributes. Defaults to false");
