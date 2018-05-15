@@ -18,10 +18,13 @@ package nifi;
 
 import org.apache.nifi.bundle.Bundle;
 import org.apache.nifi.nar.ExtensionManager;
+import org.apache.nifi.nar.ExtensionMapping;
 import org.apache.nifi.nar.NarClassLoaders;
+import org.apache.nifi.nar.NarUnpacker;
 import org.apache.nifi.nar.SystemBundle;
 import org.apache.nifi.processor.Processor;
 import org.apache.nifi.processor.Relationship;
+import org.apache.nifi.properties.StandardNiFiProperties;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.NiFiProperties;
 import org.apache.nifi.util.TestRunner;
@@ -29,16 +32,11 @@ import org.apache.nifi.util.TestRunners;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,14 +44,12 @@ import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.Random;
 import java.util.Set;
 
 /**
@@ -71,7 +67,6 @@ public class Runner {
     private static boolean outputContent = false;
     private static String inputFileDir = "";
     private static String procName = "";
-    private static String nifiPropsPath = "";
     private static String narPath = "";
     private static String attrFile = "";
     private static int numFiles = 0;
@@ -83,11 +78,11 @@ public class Runner {
         System.err.println("   -attrs              Output flow file attributes. Defaults to false");
         System.err.println("   -all                Output content, attributes, etc. about flow files that were transferred to any relationship. Defaults to false");
         System.err.println("   -input=<directory>  Send each file in the specified directory as a flow file to the script");
-        System.err.println("   -nifi-path=<path>   Path to base NiFi installation");
-        System.err.println("   -nar-path=<path>    Path to NAR containing processor under test");
+        System.err.println("   -nifi-path=<path>   Path to folder containing the NAR with processor under test, and any parent NARs");
         System.err.println("   -attrfile=<paths>   Path to a properties file specifying attributes to add to incoming flow files.");
     }
 
+    @SuppressWarnings("unchecked")
     public static void main(String[] args) {
 
         // Expecting a single arg with the filename, will figure out language from file extension
@@ -114,10 +109,8 @@ public class Runner {
                 outputAttributes = true;
             } else if (arg.startsWith("-input=")) {
                 inputFileDir = arg.substring("-input=".length());
-            } else if (arg.startsWith("-nifi-path=")) {
-                nifiPropsPath = arg.substring("-nifi-path=".length());
             } else if (arg.startsWith("-nar-path=")) {
-                narPath = arg.substring("-nifi-path=".length());
+                narPath = arg.substring("-nar-path=".length());
             } else if (arg.startsWith("-attrfile=")) {
                 attrFile = arg.substring("-attrfile=".length());
             } else {
@@ -132,25 +125,33 @@ public class Runner {
         }
 
         try {
-            final ClassLoader bootstrap = createBootstrapClassLoader(nifiPropsPath, narPath);
-            NiFiProperties properties = initializeProperties(args, bootstrap, nifiPropsPath);
-            properties.validate();
+            //final ClassLoader bootstrap = createBootstrapClassLoader(nifiPropsPath, narPath);
+            Properties props = new Properties();
+            props.put(NiFiProperties.NAR_WORKING_DIRECTORY, NiFiProperties.DEFAULT_NAR_WORKING_DIR);
+            props.put(NiFiProperties.NAR_LIBRARY_DIRECTORY, narPath);
 
+            NiFiProperties properties = new StandardNiFiProperties(props);
+            properties.validate();
             final Bundle systemBundle = SystemBundle.create(properties);
 
-            NarClassLoaders.getInstance().init(Paths.get(nifiPropsPath, properties.getFrameworkWorkingDirectory().toString()).toFile(),
-                    Paths.get(nifiPropsPath, properties.getExtensionsWorkingDirectory().toString()).toFile());
+            // expand the nars
+            NarUnpacker.unpackNars(properties, systemBundle);
 
-            ExtensionManager.discoverExtensions(systemBundle, NarClassLoaders.getInstance().getBundles());
+            // load the extensions classloaders
+            NarClassLoaders narClassLoaders = NarClassLoaders.getInstance();
+
+
+            narClassLoaders.init(Paths.get(narPath, properties.getFrameworkWorkingDirectory().toString()).toFile(),
+                    Paths.get(narPath, properties.getExtensionsWorkingDirectory().toString()).toFile());
+
+            ExtensionManager.discoverExtensions(systemBundle, narClassLoaders.getBundles());
         } catch (final Throwable t) {
             LOGGER.error("Failure to launch NiFi due to " + t, t);
             t.printStackTrace();
         }
 
 
-        // TODO get instance of processor and configure it
-        Class<? extends Processor> processor = null;
-
+        Class<? extends Processor> processor;
         Optional<Class> proc = ExtensionManager.getExtensions(Processor.class).stream().filter(p -> p.getSimpleName().equals(procName)).findFirst();
         if (!proc.isPresent()) {
             System.out.println("Could not find processor class");
@@ -288,137 +289,6 @@ public class Runner {
 
         //Create the bootstrap classloader
         return new URLClassLoader(urls.toArray(new URL[0]), Thread.currentThread().getContextClassLoader());
-    }
-
-    private static NiFiProperties initializeProperties(final String[] args, final ClassLoader boostrapLoader, final String nifiPropsPath) {
-        // Try to get key
-        // If key doesn't exist, instantiate without
-        // Load properties
-        // If properties are protected and key missing, throw RuntimeException
-
-        final ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        final String key;
-        try {
-            key = loadFormattedKey(args);
-            // The key might be empty or null when it is passed to the loader
-        } catch (IllegalArgumentException e) {
-            final String msg = "The bootstrap process did not provide a valid key";
-            throw new IllegalArgumentException(msg, e);
-        }
-        Thread.currentThread().setContextClassLoader(boostrapLoader);
-
-        try {
-            final Class<?> propsLoaderClass = Class.forName("org.apache.nifi.properties.NiFiPropertiesLoader", true, boostrapLoader);
-            final Method withKeyMethod = propsLoaderClass.getMethod("withKey", String.class);
-            final Object loaderInstance = withKeyMethod.invoke(null, key);
-            final Method getMethod = propsLoaderClass.getMethod("load", String.class);
-            final NiFiProperties properties = (NiFiProperties) getMethod.invoke(loaderInstance, Paths.get(nifiPropsPath, "conf/nifi.properties").toString());
-            LOGGER.info("Loaded {} properties", properties.size());
-            return properties;
-        } catch (final IllegalAccessException | InvocationTargetException | NoSuchMethodException | ClassNotFoundException reex) {
-            final String msg = "Unable to access properties loader in the expected manner - apparent classpath or build issue";
-            throw new IllegalArgumentException(msg, reex);
-        } catch (final RuntimeException e) {
-            final String msg = "There was an issue decrypting protected properties";
-            throw new IllegalArgumentException(msg, e);
-        } finally {
-            Thread.currentThread().setContextClassLoader(contextClassLoader);
-        }
-    }
-
-    private static String loadFormattedKey(String[] args) {
-        String key = null;
-        List<String> parsedArgs = parseArgs(args);
-        // Check if args contain protection key
-        if (parsedArgs.contains(KEY_FILE_FLAG)) {
-            key = getKeyFromKeyFileAndPrune(parsedArgs);
-            // Format the key (check hex validity and remove spaces)
-            key = formatHexKey(key);
-
-        }
-
-        if (null == key) {
-            return "";
-        } else if (!isHexKeyValid(key)) {
-            throw new IllegalArgumentException("The key was not provided in valid hex format and of the correct length");
-        } else {
-            return key;
-        }
-    }
-
-    private static String getKeyFromKeyFileAndPrune(List<String> parsedArgs) {
-        String key = null;
-        LOGGER.debug("The bootstrap process provided the " + KEY_FILE_FLAG + " flag");
-        int i = parsedArgs.indexOf(KEY_FILE_FLAG);
-        if (parsedArgs.size() <= i + 1) {
-            LOGGER.error("The bootstrap process passed the {} flag without a filename", KEY_FILE_FLAG);
-            throw new IllegalArgumentException("The bootstrap process provided the " + KEY_FILE_FLAG + " flag but no key");
-        }
-        try {
-            String passwordfile_path = parsedArgs.get(i + 1);
-            // Slurp in the contents of the file:
-            byte[] encoded = Files.readAllBytes(Paths.get(passwordfile_path));
-            key = new String(encoded, StandardCharsets.UTF_8);
-            if (0 == key.length())
-                throw new IllegalArgumentException("Key in keyfile " + passwordfile_path + " yielded an empty key");
-
-            LOGGER.info("Now overwriting file in " + passwordfile_path);
-
-            // Overwrite the contents of the file (to avoid littering file system
-            // unlinked with key material):
-            File password_file = new File(passwordfile_path);
-            FileWriter overwriter = new FileWriter(password_file, false);
-
-            // Construe a random pad:
-            Random r = new Random();
-            StringBuffer sb = new StringBuffer();
-            // Note on correctness: this pad is longer, but equally sufficient.
-            while (sb.length() < encoded.length) {
-                sb.append(Integer.toHexString(r.nextInt()));
-            }
-            String pad = sb.toString();
-            LOGGER.info("Overwriting key material with pad: " + pad);
-            overwriter.write(pad);
-            overwriter.close();
-
-            LOGGER.info("Removing/unlinking file: " + passwordfile_path);
-            password_file.delete();
-
-        } catch (IOException e) {
-            LOGGER.error("Caught IOException while retrieving the " + KEY_FILE_FLAG + "-passed keyfile; aborting: " + e.toString());
-            System.exit(1);
-        }
-
-        LOGGER.info("Read property protection key from key file provided by bootstrap process");
-        return key;
-    }
-
-    private static List<String> parseArgs(String[] args) {
-        List<String> parsedArgs = new ArrayList<>(Arrays.asList(args));
-        for (int i = 0; i < parsedArgs.size(); i++) {
-            if (parsedArgs.get(i).startsWith(KEY_FILE_FLAG + " ")) {
-                String[] split = parsedArgs.get(i).split(" ", 2);
-                parsedArgs.set(i, split[0]);
-                parsedArgs.add(i + 1, split[1]);
-                break;
-            }
-        }
-        return parsedArgs;
-    }
-
-    private static String formatHexKey(String input) {
-        if (input == null || input.trim().isEmpty()) {
-            return "";
-        }
-        return input.replaceAll("[^0-9a-fA-F]", "").toLowerCase();
-    }
-
-    private static boolean isHexKeyValid(String key) {
-        if (key == null || key.trim().isEmpty()) {
-            return false;
-        }
-        // Key length is in "nibbles" (i.e. one hex char = 4 bits)
-        return Arrays.asList(128, 196, 256).contains(key.length() * 4) && key.matches("^[0-9a-fA-F]*$");
     }
 }
 

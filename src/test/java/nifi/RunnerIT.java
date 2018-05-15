@@ -23,24 +23,11 @@ import java.io.File;
 /**
  * Unit tests for the Runner class
  */
-public class RunnerTest {
+public class RunnerIT {
 
     @Test
     public void testProc() {
         System.out.println(new File(".").getAbsolutePath());
-        Runner.main(new String[]{"-nar-path=src/test/resources/nifi_base", "-input=src/test/resources/input_files", "TestProcessor"});
-    }
-
-    @Test
-    public void testProcWithAttrs() {
-        System.out.println(new File(".").getAbsolutePath());
-        Runner.main(new String[]{"-nar-path=src/test/resources/nifi_base", "-input=src/test/resources/input_files",
-                "-attrfile=src/test/resources/attrfiles/incoming_attributes.properties", "-attrs", "TestProcessor"});
-    }
-
-    @Test
-    public void testProcWithAll() {
-        System.out.println(new File(".").getAbsolutePath());
-        Runner.main(new String[]{"-nar-path=src/test/resources/nifi_base", "-input=src/test/resources/input_files", "-all", "TestProcessor"});
+        Runner.main(new String[]{"-nar-path=/Users/mburgess/proctest", "-input=src/test/resources/input_files", "UpdateAttribute"});
     }
 }

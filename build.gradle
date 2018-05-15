@@ -54,6 +54,9 @@ dependencies {
     testCompile 'junit:junit:4.12'
     compile 'junit:junit:4.12'
     runtime 'org.slf4j:slf4j-log4j12:1.7.25'
+    runtime "org.apache.nifi:nifi-framework-api:${project.ext.NIFI_VERSION}"
+    runtime "org.apache.nifi:nifi-properties:${project.ext.NIFI_VERSION}"
+    runtime "org.apache.nifi:nifi-runtime:${project.ext.NIFI_VERSION}"
 }
 
 mainClassName = 'nifi.Runner'
@@ -65,6 +68,7 @@ test {
         // in Gradle output.
         showStandardStreams = true
     }
+    forkEvery = 1
 }
 
 // custom tasks for creating source/javadoc jars
